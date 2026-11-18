@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thermal Mass Flow Meter</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Plotly for Interactive Charts -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <!-- Load an LCD-like Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --meter-scale: 1;
+        }
+        @media (max-width: 450px) {
+            :root {
+                --meter-scale: calc(95vw / 420);
+            }
+        }
+
+        body {
+            background-color: #2d3748;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            gap: 1.5rem;
+            padding: 1rem;
+        }
+
+        /* Meter Body Styling - 3D Effect */
+        .meter-housing {
+            width: 420px;
+            height: 420px;
+            background: radial-gradient(circle at 30% 30%, #306c61, #133a34);
+            border-radius: 50%;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 
+                0 25px 40px -10px rgba(0, 0, 0, 0.8), 
+                inset 0 0 0 12px #93a3a5,
+                inset 0 10px 20px 12px rgba(255,255,255,0.7),
+                inset 0 -10px 25px 12px rgba(0,0,0,0.6);
+            border: 2px solid #5a6b6c;
+            transform: scale(var(--meter-scale));
+        }
+
+        .meter-housing::after {
+            content: '';
+            position: absolute;
+            top: 2%;
+            left: 5%;
+            width: 90%;
+            height: 90%;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 40%);
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .stripes {
+            position: absolute;
+            top: 35%;
+            height: 30%;
+            width: 45px;
+            background: repeating-linear-gradient(
+                to bottom,
+                transparent,
+                transparent 12px,
+                #1a1a1a 12px,
+                #1a1a1a 20px
+            );
+        }
+        .stripes.left { left: 0; }
+        .stripes.right { right: 0; }
+
+        .meter-title {
+            position: absolute;
+            top: 13%;
+            width: 100%;
+            text-align: center;
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: #e5e7eb;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            letter-spacing: 0px;
+        }
+
+        .lcd-screen {
+            position: absolute;
+            top: 26%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 290px;
+            height: 155px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 10px solid #1f2022;
+            border-radius: 16px;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.2), 0 5px 15px rgba(0,0,0,0.4);
+            font-family: 'Share Tech Mono', monospace;
+            color: #0b2f42;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+
+        /* Effect for screen update */
+        .lcd-update-flash {
+            background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+        }
+
+        .control-panel {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 27%;
+            background-color: #1f2022;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 40px;
+            padding-top: 10px;
+        }
+
+        .btn-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            z-index: 20;
+        }
+        
+        .indicator-ring {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 3px solid #b84338;
+            background-color: transparent;
+            transition: all 0.2s;
+        }
+
+        .btn-wrapper:active .indicator-ring {
+            background-color: #ef4444;
+            box-shadow: 0 0 10px #ef4444;
+        }
+
+        .btn-label {
+            color: #d1d5db;
+            font-weight: bold;
+            font-size: 0.9rem;
+            letter-spacing: 0.5px;
+            text-align: center;
+        }
+
+        .lcd-row {
+            line-height: 1;
+        }
+
+        /* Ping animation for real-time status */
+        @keyframes ping-small {
+            0% { transform: scale(1); opacity: 1; }
+            75% { transform: scale(1.5); opacity: 0; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+        .status-ping {
+            animation: ping-small 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Company Logo -->
+    <img src="https://i.postimg.cc/j2HPn1ch/message-Image-1787986866051-Copy.jpg" alt="Company Logo" class="w-56 max-w-[80vw] md:w-64 object-contain rounded-lg shadow-lg relative z-10 bg-white p-1 border-2 border-gray-400">
+
+    <div class="meter-housing">
+        <div class="meter-title">Thermal Mass Flow Meter</div>
+
+        <div class="stripes left"></div>
+        <div class="stripes right"></div>
+
+        <div id="lcd-display" class="lcd-screen">
+            <!-- Top row: Status, Time Update -->
+            <div class="lcd-row flex justify-between items-center text-sm w-full relative">
+                <div class="flex items-center gap-1">
+                    <div class="relative flex items-center justify-center h-2.5 w-2.5">
+                        <span id="status-ping" class="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 hidden"></span>
+                        <span id="status-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 shadow-[0_0_4px_#ef4444]"></span>
+                    </div>
+                    <span id="status-text" class="text-[10px] font-bold">Offline</span>
+                </div>
+                <!-- กึ่งกลาง แสดงเวลาล่าสุดที่อัปเดต -->
+                <div id="update-time" class="absolute left-1/2 -translate-x-1/2 text-[10px] whitespace-nowrap tracking-tighter font-bold text-gray-500">Connecting...</div>
+                <div class="w-[35px]"></div>
+            </div>
+
+            <!-- Second row: Flow Rate -->
+            <div class="lcd-row text-[1.1rem] mt-2 whitespace-nowrap">
+                Flow <span id="flow-val" class="text-2xl mx-1 tracking-tight">--.---</span> Nm³/h
+            </div>
+
+            <!-- Third row: Total Volume (Center) -->
+            <div class="lcd-row flex items-end justify-center mt-2">
+                <span id="total-val" class="text-[2.1rem] tracking-tighter leading-[0.8] font-bold">--------</span>
+                <div class="text-[0.9rem] leading-none ml-1 relative bottom-[2px]">
+                    <span class="block text-center border-t border-[#0b2f42] pt-[1px] font-bold">Nm³</span>
+                </div>
+            </div>
+
+            <!-- Fourth row: Temp (Left) & Velocity (Right) -->
+            <div class="lcd-row flex justify-between items-end mt-1 text-[1rem] font-bold">
+                <div><span id="temp-val">--.-</span> °C</div>
+                <div><span id="vel-val">-.---</span> Nm/s</div>
+            </div>
+        </div>
+
+        <!-- Bottom Controls -->
+        <div class="control-panel">
+            <div class="btn-wrapper cursor-pointer hover:scale-105 transition-transform" onclick="openModal()">
+                <div class="indicator-ring"></div>
+                <div class="btn-label">Trend</div>
+            </div>
+            <div class="btn-wrapper cursor-pointer hover:scale-105 transition-transform" onclick="window.open('https://docs.google.com/spreadsheets/d/1UKqU3NyaK8w_dkwYmjUCUL1ck4ZgxMzt91-fQBeJcWM/edit?gid=1497898316', '_blank')">
+                <div class="indicator-ring"></div>
+                <div class="btn-label">G Sheet</div>
+            </div>
+            <div class="btn-wrapper cursor-pointer hover:scale-105 transition-transform" onclick="forceUpdate()">
+                <div class="indicator-ring"></div>
+                <div class="btn-label">Refresh</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trend Chart Modal -->
+    <div id="trend-modal" class="hidden fixed inset-0 bg-black/80 z-50 flex justify-center items-center backdrop-blur-sm">
+        <div class="bg-white rounded-lg p-3 sm:p-5 w-[95%] max-w-4xl h-[85vh] flex flex-col shadow-2xl">
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-4 gap-3">
+                <h2 class="text-xl sm:text-2xl font-bold text-gray-800">Daily Trend Data</h2>
+                <div class="flex flex-wrap gap-2 justify-center">
+                    <input type="date" id="trend-date" class="border-2 border-gray-300 p-2 rounded-md font-semibold text-gray-700 outline-none focus:border-blue-500 text-sm sm:text-base">
+                    <select id="trend-filter" class="border-2 border-gray-300 p-2 rounded-md font-semibold text-gray-700 outline-none focus:border-blue-500 text-sm sm:text-base">
+                        <option value="flow">Flow Rate (Nm³/h)</option>
+                        <option value="total">Total Volume (Nm³)</option>
+                        <option value="temp">Temperature (°C)</option>
+                        <option value="vel">Velocity (Nm/s)</option>
+                    </select>
+                    <button onclick="autoScaleChart()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-3 py-2 rounded-md transition-colors shadow-md">Auto</button>
+                    <button onclick="closeModal()" class="bg-red-500 hover:bg-red-600 text-white font-bold px-3 py-2 rounded-md transition-colors shadow-md">Close</button>
+                </div>
+            </div>
+            <div id="min-max-stats" class="mb-3 text-xs sm:text-sm font-bold flex flex-wrap gap-x-6 gap-y-2 bg-gray-100 p-3 rounded-md border">
+                <!-- Stats will be injected here -->
+            </div>
+            <div id="chart-div" class="flex-grow w-full border rounded-md relative">
+                <!-- Loading Overlay for Chart -->
+                <div id="chart-loading" class="hidden absolute inset-0 bg-white/70 flex items-center justify-center z-10 font-bold text-gray-600">
+                    Updating Chart...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Fetching Script -->
+    <script>
+        const SHEET_ID = '1UKqU3NyaK8w_dkwYmjUCUL1ck4ZgxMzt91-fQBeJcWM';
+        
+        function getTodaySheetName() {
+            const today = new Date();
+            const dd = String(today.getDate()).padStart(2, '0');
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const yyyy = today.getFullYear();
+            return `${dd}-${mm}-${yyyy}`; 
+        }
+
+        // แปลงฟอร์แมต YYYY-MM-DD จาก Date Picker เป็น DD-MM-YYYY สำหรับ Google Sheet
+        function formatDateToSheetName(ymdString) {
+            if (!ymdString) return getTodaySheetName();
+            const parts = ymdString.split('-');
+            if (parts.length === 3) {
+                return `${parts[2]}-${parts[1]}-${parts[0]}`; 
+            }
+            return getTodaySheetName();
+        }
+
+        // ดึงวันที่วันนี้ในฟอร์แมต YYYY-MM-DD
+        function getTodayYMD() {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        const getReadUrl = (sheetName) => `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq=${encodeURIComponent('select * where A is not null')}&sheet=${encodeURIComponent(sheetName)}&_=${new Date().getTime()}`;
+
+        let meterData = []; // เก็บข้อมูลของวันนี้สำหรับหน้าจอมิเตอร์
+        let chartData = []; // เก็บข้อมูลสำหรับกราฟ (ตามวันที่เลือก)
+        let isModalOpen = false;
+        let userSelectedDate = false;
+        let lastUpdateTime = 0;
+
+        function parseSheetDate(cell) {
+            if (!cell || cell.v == null) return null;
+            
+            if (typeof cell.v === 'string' && cell.v.startsWith('Date(')) {
+                const m = cell.v.match(/Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/);
+                if (m) return new Date(parseInt(m[1]), parseInt(m[2]), parseInt(m[3]), parseInt(m[4]||0), parseInt(m[5]||0), parseInt(m[6]||0));
+            } 
+            
+            let val = cell.f || cell.v;
+            if (typeof val === 'string') {
+                const match = val.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{1,2}):(\d{1,2}))?/);
+                if (match) {
+                    let p1 = parseInt(match[1]);
+                    let p2 = parseInt(match[2]);
+                    let year = parseInt(match[3]);
+                    let h = parseInt(match[4]||0);
+                    let m = parseInt(match[5]||0);
+                    let s = parseInt(match[6]||0);
+                    
+                    if (year > 2500) year -= 543;
+                    
+                    let day, month;
+                    if (p1 > 12) { day = p1; month = p2 - 1; } 
+                    else if (p2 > 12) { month = p1 - 1; day = p2; } 
+                    else { day = p1; month = p2 - 1; }
+                    return new Date(year, month, day, h, m, s);
+                }
+                const d = new Date(val);
+                if (!isNaN(d.getTime())) return d;
+            }
+            return null;
+        }
+
+        function setStatus(isOnline, isFetching = false) {
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            const ping = document.getElementById('status-ping');
+
+            if (isOnline) {
+                dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500 shadow-[0_0_4px_#22c55e]";
+                text.innerText = "Online";
+                text.classList.replace("text-red-500", "text-green-600");
+                
+                if (isFetching) {
+                    ping.classList.remove("hidden");
+                    ping.classList.add("status-ping", "bg-green-400");
+                } else {
+                    ping.classList.add("hidden");
+                    ping.classList.remove("status-ping");
+                }
+            } else {
+                dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 shadow-[0_0_4px_#ef4444]";
+                text.innerText = "Offline";
+                text.classList.replace("text-green-600", "text-red-500");
+                ping.classList.add("hidden");
+            }
+        }
+
+        async function fetchMeterData() {
+            try {
+                setStatus(true, true); // กำลังดึงข้อมูล
+
+                const currentSheet = getTodaySheetName();
+                const response = await fetch(getReadUrl(currentSheet), {
+                    cache: 'no-store',
+                    headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
+                });
+                
+                if (!response.ok) throw new Error('Network error');
+                
+                const text = await response.text();
+                const jsonString = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+                const data = JSON.parse(jsonString);
+
+                if (data.table && data.table.rows && data.table.rows.length > 0) {
+                    const rows = data.table.rows;
+                    
+                    meterData = rows.map(r => {
+                        if (!r || !r.c || !r.c[0]) return null;
+                        const time = parseSheetDate(r.c[0]);
+                        if (!time || isNaN(time.getTime())) return null;
+                        
+                        return {
+                            timeStr: r.c[0].f || r.c[0].v || '',
+                            time: time,
+                            temp: r.c[1] && r.c[1].v != null ? Number(r.c[1].v) : 0,
+                            vel: r.c[2] && r.c[2].v != null ? Number(r.c[2].v) : 0,
+                            flow: r.c[3] && r.c[3].v != null ? Number(r.c[3].v) : 0,
+                            total: r.c[4] && r.c[4].v != null ? Number(r.c[4].v) : 0
+                        };
+                    }).filter(d => d !== null); 
+                    
+                    if (meterData.length > 0) {
+                        // เรียงข้อมูลตามเวลาจากใหม่สุดไปเก่าสุด เพื่อดึงค่าล่าสุด
+                        meterData.sort((a, b) => b.time.getTime() - a.time.getTime());
+                        const latestData = meterData[0];
+                        
+                        if (latestData.time.getTime() !== lastUpdateTime) {
+                            lastUpdateTime = latestData.time.getTime();
+                            updateDisplayFromObj(latestData);
+                            flashLCD();
+                        }
+                        
+                        if (!userSelectedDate) {
+                            const datePicker = document.getElementById('trend-date');
+                            if(datePicker.value !== getTodayYMD()) {
+                                datePicker.value = getTodayYMD();
+                            }
+                        }
+
+                        // หากเปิด Modal อยู่ และกำลังดูข้อมูลของ "วันนี้" ให้อัปเดตกราฟแบบ Real-time ด้วย
+                        const datePicker = document.getElementById('trend-date');
+                        if (isModalOpen && (!datePicker.value || datePicker.value === getTodayYMD())) {
+                            chartData = [...meterData].sort((a, b) => a.time.getTime() - b.time.getTime());
+                            renderChart();
+                        }
+                    }
+                }
+                
+                setTimeout(() => setStatus(true, false), 500); 
+
+            } catch (error) {
+                console.error("Error fetching data:", error);
+                setStatus(false, false);
+            }
+        }
+
+        // ฟังก์ชันใหม่สำหรับการดึงข้อมูลย้อนหลังตามวันที่กำหนด (สำหรับกราฟเท่านั้น)
+        async function fetchHistoricalChartData(ymdDate) {
+            const sheetName = formatDateToSheetName(ymdDate);
+            const loadingOverlay = document.getElementById('chart-loading');
+            loadingOverlay.classList.remove('hidden');
+            
+            try {
+                const response = await fetch(getReadUrl(sheetName), { cache: 'no-store' });
+                if (!response.ok) throw new Error('Sheet not found or network error');
+                
+                const text = await response.text();
+                const jsonString = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+                const data = JSON.parse(jsonString);
+                
+                if (data.table && data.table.rows && data.table.rows.length > 0) {
+                    chartData = data.table.rows.map(r => {
+                        if (!r || !r.c || !r.c[0]) return null;
+                        const time = parseSheetDate(r.c[0]);
+                        if (!time || isNaN(time.getTime())) return null;
+                        return {
+                            time: time,
+                            temp: r.c[1] && r.c[1].v != null ? Number(r.c[1].v) : 0,
+                            vel: r.c[2] && r.c[2].v != null ? Number(r.c[2].v) : 0,
+                            flow: r.c[3] && r.c[3].v != null ? Number(r.c[3].v) : 0,
+                            total: r.c[4] && r.c[4].v != null ? Number(r.c[4].v) : 0
+                        };
+                    }).filter(d => d !== null);
+                    
+                    // เรียงข้อมูลสำหรับกราฟ (เก่าไปใหม่ ซ้ายไปขวา)
+                    chartData.sort((a, b) => a.time.getTime() - b.time.getTime());
+                } else {
+                    chartData = []; // ไม่มีข้อมูล
+                }
+            } catch (err) {
+                console.warn("Could not fetch historical data for " + sheetName, err);
+                chartData = []; // ล้างข้อมูลหากดึงไม่สำเร็จ
+            } finally {
+                loadingOverlay.classList.add('hidden');
+                renderChart();
+                setTimeout(autoScaleChart, 100);
+            }
+        }
+
+        function flashLCD() {
+            const lcd = document.getElementById('lcd-display');
+            lcd.classList.add('lcd-update-flash');
+            setTimeout(() => {
+                lcd.classList.remove('lcd-update-flash');
+            }, 300);
+        }
+
+        function updateDisplayFromObj(dataObj) {
+            let formattedTime = '--:--:--';
+            if (dataObj.time) {
+                const DD = String(dataObj.time.getDate()).padStart(2, '0');
+                const MM = String(dataObj.time.getMonth() + 1).padStart(2, '0');
+                const YYYY = dataObj.time.getFullYear();
+                const HH = String(dataObj.time.getHours()).padStart(2, '0');
+                const mm = String(dataObj.time.getMinutes()).padStart(2, '0');
+                const ss = String(dataObj.time.getSeconds()).padStart(2, '0');
+                formattedTime = `${DD}/${MM}/${YYYY} ${HH}:${mm}:${ss}`;
+            }
+
+            document.getElementById('update-time').innerText = formattedTime;
+            document.getElementById('update-time').classList.remove('text-gray-500');
+            document.getElementById('update-time').classList.add('text-[#0b2f42]');
+            
+            document.getElementById('flow-val').innerText = Number(dataObj.flow).toFixed(3);
+            document.getElementById('total-val').innerText = Number(dataObj.total).toFixed(2);
+            document.getElementById('temp-val').innerText = Number(dataObj.temp).toFixed(1);
+            document.getElementById('vel-val').innerText = Number(dataObj.vel).toFixed(3);
+        }
+
+        function forceUpdate() {
+            document.getElementById('update-time').innerText = "Refreshing...";
+            fetchMeterData();
+        }
+
+        // --- Modal & Chart Logic ---
+        function openModal() {
+            document.getElementById('trend-modal').classList.remove('hidden');
+            isModalOpen = true;
+            
+            const datePicker = document.getElementById('trend-date');
+            if (!datePicker.value) {
+                datePicker.value = getTodayYMD();
+            }
+            
+            // ดึงข้อมูลสำหรับวันที่เลือกมาแสดง (อาจจะเป็นวันนี้ หรือวันที่ผู้ใช้เคยเลือกค้างไว้)
+            fetchHistoricalChartData(datePicker.value);
+        }
+
+        function closeModal() {
+            document.getElementById('trend-modal').classList.add('hidden');
+            isModalOpen = false;
+        }
+
+        function autoScaleChart() {
+            const chartDiv = document.getElementById('chart-div');
+            if (chartDiv && chartDiv.data) {
+                Plotly.relayout(chartDiv, {
+                    'xaxis.autorange': true,
+                    'yaxis.autorange': true
+                });
+            }
+        }
+        
+        document.getElementById('trend-date').addEventListener('change', function() {
+            userSelectedDate = true;
+            fetchHistoricalChartData(this.value); // ดึงชีทใหม่ตามวันที่เลือกทันที
+        });
+        
+        document.getElementById('trend-filter').addEventListener('change', function() {
+            renderChart();
+            setTimeout(autoScaleChart, 100); 
+        });
+
+        function renderChart() {
+            const chartDiv = document.getElementById('chart-div');
+            
+            if (!chartData || chartData.length === 0) {
+                 chartDiv.innerHTML = `
+                    <div id="chart-loading" class="hidden absolute inset-0 bg-white/70 flex items-center justify-center z-10 font-bold text-gray-600">Updating Chart...</div>
+                    <div class="flex items-center justify-center h-full w-full text-gray-500 font-bold text-xl">No data available for this date.</div>
+                 `;
+                 document.getElementById('min-max-stats').innerHTML = '';
+                 return;
+            }
+
+            // เคลียร์ข้อความ No data ถ้ามีข้อมูล
+            if (chartDiv.innerHTML.includes('No data available')) {
+                 chartDiv.innerHTML = '<div id="chart-loading" class="hidden absolute inset-0 bg-white/70 flex items-center justify-center z-10 font-bold text-gray-600">Updating Chart...</div>';
+            }
+
+            const filterKey = document.getElementById('trend-filter').value;
+            const dailyData = chartData;
+
+            const xValues = dailyData.map(d => d.time);
+            const yValues = dailyData.map(d => d[filterKey]);
+            
+            let minVal = Infinity, maxVal = -Infinity;
+            let minTime = null, maxTime = null;
+            
+            dailyData.forEach(d => {
+                if (d[filterKey] < minVal) { minVal = d[filterKey]; minTime = d.time; }
+                if (d[filterKey] > maxVal) { maxVal = d[filterKey]; maxTime = d.time; }
+            });
+            
+            const formatTime = (dt) => dt.toLocaleTimeString('th-TH');
+            const unit = filterKey === 'flow' ? 'Nm³/h' : filterKey === 'total' ? 'Nm³' : filterKey === 'temp' ? '°C' : 'Nm/s';
+
+            let statsHTML = '';
+            
+            if (filterKey === 'total') {
+                const dailyVol = maxVal - minVal;
+                const msDiff = maxTime - minTime;
+                const hrDiff = msDiff / (1000 * 60 * 60); 
+                const hourlyVol = hrDiff > 0 ? dailyVol / hrDiff : 0;
+                
+                statsHTML = `
+                    <div class="text-indigo-700"><span class="text-gray-500">Daily Used:</span> ${dailyVol.toFixed(2)} Nm³</div>
+                    <div class="text-teal-700"><span class="text-gray-500">Avg Hourly:</span> ${hourlyVol.toFixed(2)} Nm³/h</div>
+                    <div class="text-gray-500 text-xs sm:ml-auto pt-1 font-normal">
+                        Start: ${minVal.toFixed(1)} (@ ${formatTime(minTime)}) | End: ${maxVal.toFixed(1)} (@ ${formatTime(maxTime)})
+                    </div>
+                `;
+            } else {
+                statsHTML = `
+                    <div class="text-blue-700"><span class="text-gray-500">Min:</span> ${minVal.toFixed(3)} ${unit} <span class="text-gray-400 font-normal ml-1">(@ ${formatTime(minTime)})</span></div>
+                    <div class="text-red-700"><span class="text-gray-500">Max:</span> ${maxVal.toFixed(3)} ${unit} <span class="text-gray-400 font-normal ml-1">(@ ${formatTime(maxTime)})</span></div>
+                    <div class="text-green-700 sm:ml-auto"><span class="text-gray-500">Records Today:</span> <span class="font-bold">${dailyData.length}</span></div>
+                `;
+            }
+            
+            document.getElementById('min-max-stats').innerHTML = statsHTML;
+            
+            const trace = {
+                x: xValues,
+                y: yValues,
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { shape: 'spline', color: '#2563eb', width: 2 },
+                marker: { size: 4, color: '#1e40af' },
+                fill: 'tozeroy',
+                fillcolor: 'rgba(37, 99, 235, 0.1)'
+            };
+            
+            const layout = {
+                title: false,
+                uirevision: filterKey, 
+                dragmode: 'pan',
+                margin: { t: 10, l: 60, r: 20, b: 40 },
+                xaxis: { title: 'Time', gridcolor: '#e5e7eb', automargin: true },
+                yaxis: { title: unit, gridcolor: '#e5e7eb', automargin: true },
+                plot_bgcolor: 'transparent',
+                paper_bgcolor: 'transparent',
+                hovermode: 'x unified',
+                hoverlabel: {
+                    bgcolor: 'rgba(255, 255, 255, 1)', 
+                    font: { color: '#000000', size: 14, family: 'Inter, sans-serif' }, 
+                    bordercolor: '#000000'
+                }
+            };
+            
+            const config = {
+                responsive: true,
+                displayModeBar: false, 
+                scrollZoom: true 
+            };
+            
+            Plotly.react('chart-div', [trace], layout, config);
+        }
+
+        // Fetch data ทันทีเมื่อเปิดหน้า
+        fetchMeterData();
+        
+        // วนลูปการดึงข้อมูลใหม่ทุกๆ 4 วินาที (เพื่อให้รู้สึกเป็น Real-time ที่สุดโดยไม่โหลดเซิร์ฟเวอร์ Google มากเกินไป)
+        setInterval(fetchMeterData, 4000);
+
+    </script>
+</body>
+</html>
